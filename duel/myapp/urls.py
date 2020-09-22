@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import create_user_and_profile, game_start_request, course_selection, send_answers, update_game, \
+from .views import  game_start_request, course_selection, send_answers, update_game, \
     daily_game_endpoint, update_user_questions, UserLogin, UserLoginVerify, UserSignUpRequest, UsernameAvailability, \
     UserSignUpFinal, FastUserSignup
 
@@ -14,7 +14,6 @@ urlpatterns = [
     path("signup-request", UserSignUpRequest.as_view(), name="signup-request"),
     path("fastsignup", FastUserSignup.as_view(), name="fast-signup"),
 
-    path("create-user-profile", create_user_and_profile, name="create user"),
     # This path is called for begging of a game
     path("game-request/<int:league>", game_start_request, name="game-start-request"),
     # This path returns course info for game

@@ -118,65 +118,6 @@ class UserSignUpRequest(APIView):
         return Response({"Message": "SMS was sent"}, status.HTTP_200_OK)
 
 
-@api_view(['POST', 'GET'])
-def create_user_and_profile(request):
-    if request.method == 'POST':  # Create Account by Mobile
-        u = request.user
-        if u.is_authenticated:
-            return response_error(403)
-        mobile = request.data['mobile']
-        # Check if mobile number is valid <-- After launch
-        username = check_mobile_number(mobile)
-        if username is None:
-            return Response({"Message": "Mobile number invalid"}, status.HTTP_406_NOT_ACCEPTABLE)
-
-        ready = User.objects.filter(username=mobile)
-        if ready:
-            return Response({"Message": "This Mobile already exist"}, status.HTTP_406_NOT_ACCEPTABLE)
-        u = User.objects.create(username=mobile, first_name=request.data['first_name'])
-        UserProfile.objects.create(user=u)
-        hsh1, hsh2, opp = set_user_password(u)
-        t = RefreshToken.for_user(user=u)
-        return Response(
-            {
-                "username": u.username,
-                "metadata": {
-                    "hash1": hsh1,
-                    "hash2": hsh2,
-                    "opp": opp
-                },
-                "token": {
-                    "refresh": str(t),
-                    "access": str(t.access_token),
-                },
-            },
-            status.HTTP_201_CREATED
-        )
-    elif request.method == 'GET':  # Create Guest Account
-        gu = randint(0, 250).__str__() + '-' + randint(0, 250).__str__() + '-' + randint(0, 250).__str__()
-        quest_user = User.objects.create(username=gu)
-        user_name = "Guest-" + quest_user.id.__str__()
-        quest_user.username = user_name
-        hsh1, hsh2, opp = set_user_password(quest_user)
-        UserProfile.objects.create(user=quest_user)
-        t = RefreshToken.for_user(user=quest_user)
-        return Response(
-            {
-                "username": quest_user.username,
-                "metadata": {
-                    "hash1": hsh1,
-                    "hash2": hsh2,
-                    "opp": opp
-                },
-                "token": {
-                    "refresh": str(t),
-                    "access": str(t.access_token),
-                }
-            },
-            status.HTTP_201_CREATED
-        )
-
-
 @api_view(['GET'])
 def game_start_request(request, *args, **kwargs):
     if request.method == 'GET':
