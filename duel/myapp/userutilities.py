@@ -155,3 +155,12 @@ def mobile_exist_message():
 
 def user_error_message():
     return {"Message": "User not Found"}
+
+
+def valid_user(user):
+    if not user.is_authenticated:
+        return {"Message": "You should sign in first"}, status.HTTP_403_FORBIDDEN
+    profile = UserProfile.objects.filter(user=user)
+    if not profile:
+        return {"Message": "Your profile is lost"}, status.HTTP_400_BAD_REQUEST
+    return profile, status.HTTP_200_OK

@@ -18,6 +18,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from .appstatics import CallbackEndpoints, GameState, GameCacheStatus
 from .check_access import check_daily_answer, response_error
+from .gameutilities import needed_coins, league_available, user_join_a_game, join_user_as_guest, buildup_game
 from .ghasedaksms import send_verification
 from .models import UserProfile, Game, GameCache, DailyGame, GameRound, UserLeague, \
     UserCourseProgress, VerifyCode, InviteRelation
@@ -25,7 +26,7 @@ from .serializers import DailyGameSerializer, GameRoundSerializer
 from .utilities import create_user_carts, get_game_code, select_carts_for_user, bad_request_message
 from .userutilities import set_user_password, check_mobile_number, get_profile_by_mobile, create_verify_code_for_user, \
     user_json_output_format, verification_error, remove_user_verification_code, check_username_availability, \
-    user_available_message, username_available_message, setup_user, get_inviter, avoid_mobile_duplication
+    user_available_message, username_available_message, setup_user, get_inviter, avoid_mobile_duplication, valid_user
 from .check_access import game_validate
 
 
@@ -114,86 +115,27 @@ class UserSignUpRequest(APIView):
         start = time()
         send_verification(mob, "signup", code)
         end = time()
-        print(end-start)
+        print(end - start)
         return Response({"Message": "SMS was sent"}, status.HTTP_200_OK)
 
 
-@api_view(['GET'])
-def game_start_request(request, *args, **kwargs):
-    if request.method == 'GET':
+class GameRequest(APIView):
+    def post(self, request):
         user = request.user
-        if not user.is_authenticated:
-            return Response({"Message": "You should sign in first"}, status.HTTP_403_FORBIDDEN)
-        profile = UserProfile.objects.filter(user=user)
-        if not profile:
-            return Response({"Message": "Your profile is lost"}, status.HTTP_400_BAD_REQUEST)
-        else:
-            profile = profile[0]
-            if profile.coins < 500:
-                return Response({"Message": "Not Enough Coins"}, status.HTTP_406_NOT_ACCEPTABLE)
-
-        league = kwargs.get('league', None)
-        if league is None or not isinstance(league, int) or league > 5 or league < 1:
+        profile, sts = valid_user(user)
+        if sts != status.HTTP_200_OK:
+            return Response(profile, sts)
+        if profile.coins < needed_coins(request.data['challengeType']):
+            return Response({"Message": "Not Enough Coins"}, status.HTTP_406_NOT_ACCEPTABLE)
+        league = request.data['league']
+        if not league_available(league):
             return Response({"Message": "League not available"}, status.HTTP_400_BAD_REQUEST)
-        user_league = UserLeague.objects.filter(user=user, league=league)
-        if not user_league:
-            user_league = UserLeague.objects.create(user=user, league=league)
+        game, sts = user_join_a_game(user, profile, league, type)
+        if sts == status.HTTP_200_OK:
+            data = join_user_as_guest(game, user, profile)
         else:
-            user_league = user_league[0]
-
-        user_level = profile.general_level + 3 * user_league.level
-
-        open_games = Game.objects.filter(league=league, level=user_level, status=GameState.WAITINGG).exclude(
-            host_user=user)[:1]
-
-        if not open_games:
-            open_games = Game.objects.filter(league=league, level__gte=user_level - 1, level__lte=user_level + 1,
-                                             status=GameState.WAITINGG).exclude(host_user=user)[:1]
-
-        if open_games:
-            game = open_games[0]
-            game.guest_user = user
-            game.status = GameState.WAITINGA
-            profile.coins -= 500
-            profile.save()
-            game.correspond = user
-            game.end_time = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=12)
-            game.save()
-            host_profile = UserProfile.objects.get(user=game.host_user)
-            host_league = UserLeague.objects.get(user=game.host_user, league=league)
-            gc = GameCache.objects.get(game=game)
-            gc.code = GameCacheStatus.WaitingAG
-            gc.save()
-            send_data = {
-                "game_id": game.id,
-                "opponent": {
-                    "name": game.host_user.first_name,
-                    "general_score": host_profile.general_score,
-                    "league_score": host_league.score
-                },
-                "course": game.course,
-                "correspond": game.correspond,
-                "deadline": game.end_time,
-                "cache": gc.code
-            }
-            return Response(send_data, status.HTTP_201_CREATED)
-        else:
-            game = Game.objects.create(
-                league=league, level=user_league.level, status=GameState.STARTED, host_user=user, correspond=user,
-                end_time=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=12)
-            )
-            gc = GameCache.objects.create(game=game, code=GameCacheStatus.WaitingG)
-            profile.coins -= 500
-            profile.save()
-            send_data = {
-                "game_id": game.id,
-                "opponent": 0,
-                "deadline": game.end_time,
-                "cache": gc.code,
-            }
-            return Response(send_data, status.HTTP_201_CREATED)
-    else:
-        return Response({"Message": "Only GET Method is Accepted"}, status.HTTP_400_BAD_REQUEST)
+            data = buildup_game(league, game, user, profile)
+        return Response(data, status.HTTP_201_CREATED)
 
 
 @api_view(['GET'])
